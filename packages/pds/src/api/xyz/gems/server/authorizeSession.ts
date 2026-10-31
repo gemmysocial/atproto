@@ -1,7 +1,7 @@
 import { DAY, MINUTE } from '@atproto/common'
-import { AuthRequiredError, Server } from '@atproto/xrpc-server'
+import { AuthRequiredError, type Server } from '@atproto/xrpc-server'
 import { OLD_PASSWORD_MAX_LENGTH } from '../../../../account-manager/helpers/scrypt.js'
-import { AppContext } from '../../../../context.js'
+import type { AppContext } from '../../../../context.js'
 import { authorizeFirstPartySession } from '../../../../first-party-auth.js'
 import { xyz } from '../../../../lexicons/index.js'
 

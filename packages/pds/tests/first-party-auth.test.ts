@@ -1,5 +1,7 @@
-import { IncomingMessage } from 'node:http'
+import { createSecretKey } from 'node:crypto'
+import type { IncomingMessage } from 'node:http'
 import { describe, expect, it, jest } from '@jest/globals'
+import { SignJWT } from 'jose'
 import type { AppContext } from '../src/context.js'
 import {
   authorizeFirstPartySession,
@@ -9,6 +11,7 @@ import {
 const clientId = 'https://staging-api.gems.xyz/auth/oauth-client-metadata.json'
 const config = {
   firstPartyClients: [clientId],
+  firstPartyNativeAuthOrigin: 'http://127.0.0.1:8080',
   firstPartyClientTemplates: [
     'https://api-preview-q{runId}.gems.xyz/auth/oauth-client-metadata.json',
   ],
@@ -18,7 +21,24 @@ const input = {
   password: 'fixture-password',
   requestUri: 'urn:ietf:params:oauth:request_uri:fixture',
 }
+beforeEach(() => jest.restoreAllMocks())
 function fixture() {
+  const jwtKey = createSecretKey(Buffer.alloc(32, 1))
+  const revokeRefreshToken = jest.fn(async (_id: string) => {})
+  const nativeFetch = jest
+    .spyOn(globalThis, 'fetch')
+    .mockImplementation(async () =>
+      Response.json({
+        did: 'did:plc:alice',
+        refreshJwt: await new SignJWT({ scope: 'com.atproto.refresh' })
+          .setProtectedHeader({ alg: 'HS256', typ: 'refresh+jwt' })
+          .setAudience('did:web:gems.xyz')
+          .setSubject('did:plc:alice')
+          .setJti('temporary-native-session')
+          .setExpirationTime('5m')
+          .sign(jwtKey),
+      }),
+    )
   const pending = {
     requestUri: input.requestUri,
     clientId,
@@ -64,10 +84,28 @@ function fixture() {
   const ctx = {
     cfg: { oauth: { provider: config } },
     oauthProvider: provider,
-    accountManager: { login },
+    accountManager: {
+      login,
+      jwtKey,
+      serviceDid: 'did:web:gems.xyz',
+      revokeRefreshToken,
+    },
   } as unknown as Pick<AppContext, 'cfg' | 'oauthProvider' | 'accountManager'>
   const req = { headers: {} } as IncomingMessage
-  return { ctx, req, provider, pending, client, account, login }
+  return {
+    ctx,
+    req,
+    provider,
+    pending,
+    client,
+    account,
+    login,
+    nativeFetch,
+    revokeRefreshToken,
+    [Symbol.dispose]() {
+      nativeFetch.mockRestore()
+    },
+  }
 }
 describe('first-party trust boundary', () => {
   it('requires an exact configured confidential-client ID', () => {
@@ -107,13 +145,14 @@ describe('first-party trust boundary', () => {
   })
 })
 it('returns only a one-use authorization response after native credential verification', async () => {
-  const f = fixture()
+  using f = fixture()
   expect(await authorizeFirstPartySession(f.ctx, input, f.req)).toEqual({
     code: 'one-use-code',
     state: 'oauth-state',
     iss: 'https://gems.xyz',
   })
   expect(f.login).toHaveBeenCalledWith(input)
+  expect(f.revokeRefreshToken).toHaveBeenCalledWith('temporary-native-session')
   expect(f.provider.requestManager.get).toHaveBeenCalledWith(
     input.requestUri,
     'device',
@@ -131,7 +170,7 @@ it('returns only a one-use authorization response after native credential verifi
 })
 it('does not verify credentials or create devices for untrusted or unauthenticated requests', async () => {
   for (const failure of ['client', 'par', 'public', 'ambient'] as const) {
-    const f = fixture()
+    using f = fixture()
     if (failure === 'client')
       f.pending.clientId = 'https://evil.example/client.json'
     if (failure === 'par')
@@ -156,7 +195,7 @@ it('issues no grant or device for invalid credentials, app passwords, takedowns 
     'takedown',
     'identity',
   ] as const) {
-    const f = fixture()
+    using f = fixture()
     if (failure === 'password')
       f.login.mockRejectedValue(new Error('Invalid password'))
     if (failure === 'app-password')
@@ -178,5 +217,75 @@ it('issues no grant or device for invalid credentials, app passwords, takedowns 
     ).rejects.toThrow()
     expect(f.provider.deviceManager.createEphemeral).not.toHaveBeenCalled()
     expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+  }
+})
+
+it('preserves the gatekeeper email factor and issues no OAuth grant before it succeeds', async () => {
+  using f = fixture()
+  f.nativeFetch.mockResolvedValueOnce(
+    Response.json({ error: 'AuthFactorTokenRequired' }, { status: 401 }),
+  )
+  await expect(authorizeFirstPartySession(f.ctx, input, f.req)).rejects.toThrow(
+    'verification code',
+  )
+  expect(f.provider.deviceManager.createEphemeral).not.toHaveBeenCalled()
+  expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+  await authorizeFirstPartySession(
+    f.ctx,
+    { ...input, authFactorToken: 'ABCDE-12345' },
+    f.req,
+  )
+  const [url, request] = f.nativeFetch.mock.calls[1]
+  expect(String(url)).toBe(
+    'http://127.0.0.1:8080/xrpc/com.atproto.server.createSession',
+  )
+  expect(request?.redirect).toBe('error')
+  expect(JSON.parse(request!.body as string)).toEqual({
+    identifier: input.identifier,
+    password: input.password,
+    authFactorToken: 'ABCDE-12345',
+  })
+  expect(f.revokeRefreshToken).toHaveBeenCalledWith('temporary-native-session')
+})
+it('rejects unverifiable native authentication responses before authorizing a grant', async () => {
+  using f = fixture()
+  f.nativeFetch.mockResolvedValueOnce(
+    Response.json({ did: 'did:plc:alice', refreshJwt: 'forged' }),
+  )
+  await expect(
+    authorizeFirstPartySession(f.ctx, input, f.req),
+  ).rejects.toThrow()
+  expect(f.revokeRefreshToken).not.toHaveBeenCalled()
+  expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+})
+
+it('fails closed when the configured native authenticator is missing or unavailable', async () => {
+  for (const failure of [
+    'missing',
+    'external',
+    'unavailable',
+    'cleanup',
+  ] as const) {
+    using f = fixture()
+    f.ctx.cfg.oauth.provider = { ...f.ctx.cfg.oauth.provider! }
+    if (failure === 'missing')
+      f.ctx.cfg.oauth.provider.firstPartyNativeAuthOrigin = undefined
+    if (failure === 'external')
+      f.ctx.cfg.oauth.provider.firstPartyNativeAuthOrigin =
+        'https://evil.example'
+    if (failure === 'unavailable')
+      f.nativeFetch.mockResolvedValueOnce(
+        Response.json({ error: 'Unavailable' }, { status: 503 }),
+      )
+    if (failure === 'cleanup')
+      f.revokeRefreshToken.mockRejectedValueOnce(new Error('cleanup failed'))
+    await expect(
+      authorizeFirstPartySession(f.ctx, input, f.req),
+    ).rejects.toThrow()
+    expect(f.provider.deviceManager.createEphemeral).not.toHaveBeenCalled()
+    expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+    if (failure === 'missing' || failure === 'external')
+      expect(f.nativeFetch).not.toHaveBeenCalled()
+    jest.restoreAllMocks()
   }
 })

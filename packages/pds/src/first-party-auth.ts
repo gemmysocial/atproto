@@ -1,11 +1,15 @@
 import type { IncomingMessage } from 'node:http'
+import { jwtVerify } from 'jose'
 import {
   AuthRequiredError,
   ForbiddenError,
   InvalidRequestError,
+  UpstreamFailureError,
 } from '@atproto/xrpc-server'
+import { AuthScope } from './auth-scope.js'
 import type { OAuthConfig } from './config/config.js'
 import type { AppContext } from './context.js'
+import { com, type xyz } from './lexicons/index.js'
 
 type FirstPartyConfig = Pick<
   NonNullable<OAuthConfig['provider']>,
@@ -20,8 +24,78 @@ export type FirstPartySignInInput = {
   locale?: string
 }
 
+/** Keep Gatekeeper's existing password/MFA policy; temporary native tokens stay inside the PDS. */
+async function verifyNativeSignIn(
+  ctx: Pick<AppContext, 'accountManager'>,
+  origin: string | undefined,
+  input: FirstPartySignInInput,
+  expectedDid: string,
+) {
+  if (!origin)
+    throw new ForbiddenError('Native authentication is not configured')
+  const url = new URL(origin)
+  if (
+    url.protocol !== 'http:' ||
+    !['127.0.0.1', '[::1]'].includes(url.hostname) ||
+    url.pathname !== '/' ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new ForbiddenError(
+      'Native authentication must use a configured loopback origin',
+    )
+  }
+  const response = await fetch(
+    new URL(`/xrpc/${com.atproto.server.createSession.$lxm}`, url),
+    {
+      method: 'POST',
+      redirect: 'error',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        identifier: input.identifier,
+        password: input.password,
+        authFactorToken: input.authFactorToken,
+      }),
+      signal: AbortSignal.timeout(15000),
+    },
+  )
+  if (!response.ok) {
+    const body = (await response.json().catch(() => ({}))) as { error?: string }
+    if (body.error === 'AuthFactorTokenRequired')
+      throw new AuthRequiredError(
+        'Enter the verification code sent to your email',
+        'AuthFactorTokenRequired',
+      )
+    if (response.status >= 500)
+      throw new UpstreamFailureError('Native authentication is unavailable')
+    throw new AuthRequiredError('Native sign-in could not be completed')
+  }
+  const body = (await response.json()) as { did?: string; refreshJwt?: string }
+  if (typeof body.refreshJwt !== 'string')
+    throw new UpstreamFailureError('Invalid native authentication response')
+  const { payload } = await jwtVerify(
+    body.refreshJwt,
+    ctx.accountManager.jwtKey,
+    {
+      algorithms: ['HS256'],
+      audience: ctx.accountManager.serviceDid,
+      typ: 'refresh+jwt',
+    },
+  )
+  if (payload.scope !== AuthScope.Refresh || typeof payload.jti !== 'string')
+    throw new UpstreamFailureError('Invalid native authentication response')
+  await ctx.accountManager.revokeRefreshToken(payload.jti)
+  if (body.did !== expectedDid || payload.sub !== expectedDid)
+    throw new AuthRequiredError('Native sign-in account mismatch')
+}
+
 /** Only operator-configured client IDs can use first-party authorization. */
-export function isFirstPartyClient(clientId: string, config: FirstPartyConfig) {
+export function isFirstPartyClient(
+  clientId: string,
+  config: FirstPartyConfig,
+): boolean {
   let url: URL
   try {
     url = new URL(clientId)
@@ -76,11 +150,13 @@ export async function authorizeFirstPartySession(
   ctx: Pick<AppContext, 'cfg' | 'oauthProvider' | 'accountManager'>,
   input: FirstPartySignInInput,
   req: IncomingMessage,
-) {
+): Promise<xyz.gems.server.authorizeSession.$OutputBody> {
   const provider = ctx.oauthProvider
   const config = ctx.cfg.oauth.provider
   if (!provider || !config)
     throw new ForbiddenError('First-party sign-in is unavailable')
+  if (!config.firstPartyNativeAuthOrigin)
+    throw new ForbiddenError('Native authentication is not configured')
   if (req.headers.cookie || req.headers.authorization) {
     throw new InvalidRequestError('Fresh account credentials are required')
   }
@@ -121,6 +197,12 @@ export async function authorizeFirstPartySession(
       'Sign-in account does not match the authorization request',
     )
 
+  await verifyNativeSignIn(
+    ctx,
+    config.firstPartyNativeAuthOrigin,
+    input,
+    account.did,
+  )
   const { deviceId, deviceMetadata } =
     await provider.deviceManager.createEphemeral(req)
   await provider.accountManager.upsertDeviceAccount(deviceId, account.did)

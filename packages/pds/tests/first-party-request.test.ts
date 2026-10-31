@@ -1,4 +1,4 @@
-import { IncomingMessage } from 'node:http'
+import type { IncomingMessage } from 'node:http'
 import { expect, it, jest } from '@jest/globals'
 import { DeviceManager } from '../../oauth/oauth-provider/dist/device/device-manager.js'
 import { generateRequestId } from '../../oauth/oauth-provider/dist/request/request-id.js'
