@@ -1,0 +1,17 @@
+FROM gems/pds:spaces-alpha-20261022
+
+# Refuse to overwrite a different deployed server revision.
+RUN node -e 'const fs=require("node:fs"),crypto=require("node:crypto");const expected={"/app/packages/pds/dist/api/index.js":"edda90bdcab45269717bd4a5dc3b2d3654bde5941d7cb5d151db6e082eaff5ef","/app/packages/pds/dist/config/config.js":"51715ff6ee4f91ff3ae476e8ce2188a1bb47d63c443e8cdda94135751c02051f","/app/packages/pds/dist/config/env.js":"7f623d93bacd050e27d7251edd2aeac75f4fa17e8193666f2776bcc6104b7fbc","/app/packages/pds/dist/lexicons/index.js":"171367322d45ef3bc04c939e49fa3f78270cd3eb843d902591033c96775188d4","/app/packages/oauth/oauth-provider/dist/device/device-manager.js":"9ff472fc793bf8111a1a85c32c94acd5650ccceb1a53362c83fd51766d4dcde6","/app/packages/oauth/oauth-provider/dist/request/request-manager.js":"a29f7fc4bff85e8dd6c7433d121e668abcef59f0f384c8f7ce43744f295df6f7"};for(const [file,digest] of Object.entries(expected)){if(crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")!==digest)throw new Error("Unexpected Gems PDS base file: "+file)}'
+
+COPY packages/pds/dist/api/index.js packages/pds/dist/api/index.js.map /app/packages/pds/dist/api/
+COPY packages/pds/dist/config/config.js packages/pds/dist/config/config.js.map /app/packages/pds/dist/config/
+COPY packages/pds/dist/config/env.js packages/pds/dist/config/env.js.map /app/packages/pds/dist/config/
+COPY packages/pds/dist/lexicons/index.js packages/pds/dist/lexicons/index.js.map /app/packages/pds/dist/lexicons/
+COPY packages/oauth/oauth-provider/dist/device/device-manager.js packages/oauth/oauth-provider/dist/device/device-manager.js.map /app/packages/oauth/oauth-provider/dist/device/
+COPY packages/oauth/oauth-provider/dist/request/request-manager.js packages/oauth/oauth-provider/dist/request/request-manager.js.map /app/packages/oauth/oauth-provider/dist/request/
+COPY packages/pds/dist/first-party-auth.js packages/pds/dist/first-party-auth.js.map /app/packages/pds/dist/
+COPY packages/pds/dist/api/xyz/gems/server/authorizeSession.js packages/pds/dist/api/xyz/gems/server/authorizeSession.js.map /app/packages/pds/dist/api/xyz/gems/server/
+COPY packages/pds/dist/lexicons/xyz.js packages/pds/dist/lexicons/xyz.js.map /app/packages/pds/dist/lexicons/
+COPY packages/pds/dist/lexicons/xyz/ /app/packages/pds/dist/lexicons/xyz/
+
+LABEL xyz.gems.change="native-first-party-sign-in"
