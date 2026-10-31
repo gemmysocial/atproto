@@ -26,6 +26,10 @@ export function readEnv() {
 
     // OAuth
     trustedOAuthClients: envList('PDS_OAUTH_TRUSTED_CLIENTS'),
+    firstPartyOAuthClients: envList('PDS_OAUTH_FIRST_PARTY_CLIENTS'),
+    firstPartyOAuthClientTemplates: envList(
+      'PDS_OAUTH_FIRST_PARTY_CLIENT_TEMPLATES',
+    ),
 
     // branding
     primaryColor: envStr('PDS_PRIMARY_COLOR'),

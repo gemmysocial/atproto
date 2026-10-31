@@ -39,6 +39,7 @@ import {
   type RequestUri,
   decodeRequestUri,
   encodeRequestUri,
+  requestUriSchema,
 } from './request-uri.js'
 
 export class RequestManager {
@@ -324,6 +325,17 @@ export class RequestManager {
     const requestId = decodeRequestUri(requestUri)
     const data = await this.store.readRequest(requestId)
     return data?.clientId
+  }
+
+  /** Read an authorization request authenticated by its confidential client. */
+  async getAuthenticated(requestUri: string) {
+    const parsed = requestUriSchema.safeParse(requestUri)
+    if (!parsed.success) throw new InvalidRequestError('Invalid request_uri')
+    const data = await this.store.readRequest(decodeRequestUri(parsed.data))
+    if (data?.clientAuth?.method !== 'private_key_jwt') {
+      throw new InvalidRequestError('An authenticated PAR request is required')
+    }
+    return this.get(parsed.data)
   }
 
   async get(requestUri: RequestUri, deviceId?: DeviceId, clientId?: ClientId) {

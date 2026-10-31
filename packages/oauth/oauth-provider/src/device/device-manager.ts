@@ -125,6 +125,18 @@ export class DeviceManager {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<DeviceInfo> {
+    const { deviceId, sessionId, deviceMetadata } = await this.createDevice(req)
+    await this.setCookies(req, res, { deviceId, sessionId })
+    return { deviceId, deviceMetadata }
+  }
+
+  /** Create a device for native authorization without issuing browser cookies. */
+  public async createEphemeral(req: IncomingMessage): Promise<DeviceInfo> {
+    const { deviceId, deviceMetadata } = await this.createDevice(req)
+    return { deviceId, deviceMetadata }
+  }
+
+  private async createDevice(req: IncomingMessage) {
     const deviceMetadata = this.getRequestMetadata(req)
 
     const [deviceId, sessionId] = await Promise.all([
@@ -139,9 +151,7 @@ export class DeviceManager {
       ipAddress: deviceMetadata.ipAddress,
     })
 
-    await this.setCookies(req, res, { deviceId, sessionId })
-
-    return { deviceId, deviceMetadata }
+    return { deviceId, sessionId, deviceMetadata }
   }
 
   private async refresh(

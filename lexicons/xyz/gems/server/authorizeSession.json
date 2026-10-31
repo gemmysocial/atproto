@@ -1,0 +1,41 @@
+{
+  "lexicon": 1,
+  "id": "xyz.gems.server.authorizeSession",
+  "defs": {
+    "main": {
+      "type": "procedure",
+      "description": "Sign in to an operator-owned first-party client using fresh PDS credentials and an authenticated OAuth PAR request. Returns an authorization code, never upstream access or refresh tokens.",
+      "input": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["identifier", "password", "requestUri"],
+          "properties": {
+            "identifier": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            },
+            "password": { "type": "string", "minLength": 1 },
+            "authFactorToken": { "type": "string", "maxLength": 128 },
+            "requestUri": { "type": "string", "maxLength": 4096 },
+            "locale": { "type": "string", "maxLength": 32 }
+          }
+        }
+      },
+      "output": {
+        "encoding": "application/json",
+        "schema": {
+          "type": "object",
+          "required": ["code", "state", "iss"],
+          "properties": {
+            "code": { "type": "string" },
+            "state": { "type": "string" },
+            "iss": { "type": "string", "format": "uri" }
+          }
+        }
+      },
+      "errors": [{ "name": "AuthFactorTokenRequired" }]
+    }
+  }
+}

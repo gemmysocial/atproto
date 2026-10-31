@@ -331,6 +331,8 @@ export const envToCfg = (env: ServerEnvironment): ServerConfig => {
               : undefined,
           branding: brandingCfg,
           trustedClients: env.trustedOAuthClients,
+          firstPartyClients: env.firstPartyOAuthClients,
+          firstPartyClientTemplates: env.firstPartyOAuthClientTemplates,
         },
       }
 
@@ -485,6 +487,10 @@ export type OAuthConfig = {
     hcaptcha?: HcaptchaConfig
     branding: BrandingConfig
     trustedClients?: string[]
+    /** Exact confidential clients allowed to use the first-party sign-in API. */
+    firstPartyClients?: string[]
+    /** Owned CI client IDs; a single {runId} matches a numeric validation run. */
+    firstPartyClientTemplates?: string[]
   }
 }
 
