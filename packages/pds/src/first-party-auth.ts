@@ -1,5 +1,6 @@
 import type { IncomingMessage } from 'node:http'
 import { jwtVerify } from 'jose'
+import type { DidString } from '@atproto/syntax'
 import {
   AuthRequiredError,
   ForbiddenError,
@@ -29,7 +30,7 @@ async function verifyNativeSignIn(
   ctx: Pick<AppContext, 'accountManager'>,
   origin: string | undefined,
   input: FirstPartySignInInput,
-  expectedDid: string,
+  expectedDid: DidString,
 ) {
   if (!origin)
     throw new ForbiddenError('Native authentication is not configured')
@@ -47,6 +48,7 @@ async function verifyNativeSignIn(
       'Native authentication must use a configured loopback origin',
     )
   }
+  const startedAt = Date.now()
   const response = await fetch(
     new URL(`/xrpc/${com.atproto.server.createSession.$lxm}`, url),
     {
@@ -68,6 +70,26 @@ async function verifyNativeSignIn(
         'Enter the verification code sent to your email',
         'AuthFactorTokenRequired',
       )
+    if (response.status >= 500 && !input.authFactorToken) {
+      // @NOTE Gatekeeper persists its challenge before attempting SMTP delivery.
+      const issued = await ctx.accountManager.db.db
+        .selectFrom('email_token')
+        .select('requestedAt')
+        .where('did', '=', expectedDid)
+        .where('purpose', '=', '2fa_code')
+        .executeTakeFirst()
+      const issuedAt = issued && Date.parse(issued.requestedAt)
+      if (
+        issuedAt !== undefined &&
+        issuedAt >= startedAt &&
+        issuedAt <= Date.now()
+      ) {
+        throw new AuthRequiredError(
+          'Enter the verification code to continue',
+          'AuthFactorTokenRequired',
+        )
+      }
+    }
     if (response.status >= 500)
       throw new UpstreamFailureError('Native authentication is unavailable')
     throw new AuthRequiredError('Native sign-in could not be completed')

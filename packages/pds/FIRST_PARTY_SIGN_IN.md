@@ -63,6 +63,11 @@ copying the native sign-in changes. No database schema or migration is changed.
 
 ## In-app birthdate management
 
+If Gatekeeper returns a server error after issuing an email MFA challenge, the
+native bridge preserves the challenge only when that account's challenge was
+created during the request. The client must still submit a valid code and obtain
+a verified native authentication proof before a grant can be authorized.
+
 Configured confidential first-party clients can read and update the authenticated
 account's private birthdate through the existing preference RPCs. The PDS uses the
 client ID from the verified OAuth token, requires an exact configured client or
