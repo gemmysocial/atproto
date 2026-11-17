@@ -76,6 +76,8 @@ image, including group hosting, WebSockets and Gatekeeper MFA. Its five module
 hashes were verified against `gems/pds:spaces-host-312fbb797f-ws`
 (`sha256:ba939fefda203b9fd5ed49e28dfd62acd6dfce3d7d28b1300662d4676d101e64`).
 It changes no schema, credentials, MFA policy or runtime configuration.
+The overlay also updates the existing group-host integrity pin to the exact new
+auth-module hash, with both the original and resulting bundle hashes checked.
 
 After compiling the PDS, build from the repository root on the existing image host:
 

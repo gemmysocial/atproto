@@ -10,4 +10,7 @@ COPY packages/pds/dist/actor-store/preference/util.js packages/pds/dist/actor-st
 COPY packages/pds/dist/api/app/bsky/actor/getPreferences.js packages/pds/dist/api/app/bsky/actor/getPreferences.js.map /app/packages/pds/dist/api/app/bsky/actor/
 COPY packages/pds/dist/api/app/bsky/actor/putPreferences.js packages/pds/dist/api/app/bsky/actor/putPreferences.js.map /app/packages/pds/dist/api/app/bsky/actor/
 
+# Keep the group host's integrity check aligned with this verified auth module.
+RUN node -e 'const fs=require("node:fs"),crypto=require("node:crypto"),file="/app/services/pds/gems/index.mjs",source=fs.readFileSync(file,"utf8"),hash=value=>crypto.createHash("sha256").update(value).digest("hex"),before="3b80a90dc0b567330cd94dac61670cd07c2ccd7c6f9474c5c733b44aa1e6b309",after="71114221348673a77d9e6c5491a82e5704e3b2dcae5065f171f19d2d4ac1de3d";if(hash(source)!=="5c4c06140ace869701b78dcd159b43d9e7c1cb45a9d7893a91ba4862d1a8eabe"||source.split(before).length!==2)throw new Error("Unexpected Gems group-host integrity pin");const updated=source.replace(before,after);if(hash(updated)!=="55d8702dedc0c73ea29d7195c59dace3a96fd8110cbbab32ccd071ce49f296c0")throw new Error("Gems group-host pin update mismatch");fs.writeFileSync(file,updated)'
+
 LABEL xyz.gems.change="first-party-personal-details"
