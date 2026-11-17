@@ -33,6 +33,7 @@ export type OAuthOutput = {
     type: 'oauth'
     did: DidString
     permissions: ScopePermissions
+    clientId?: string
   }
 }
 

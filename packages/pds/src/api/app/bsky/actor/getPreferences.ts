@@ -2,6 +2,7 @@ import { type DidString, isDidString } from '@atproto/lex'
 import { InvalidRequestError, type Server } from '@atproto/xrpc-server'
 import { AuthScope, isAccessFull } from '../../../../auth-scope.js'
 import type { AppContext } from '../../../../context.js'
+import { canManageFirstPartyPersonalDetails } from '../../../../first-party-auth.js'
 import { app } from '../../../../lexicons/index.js'
 import {
   bareDidFromProxyTo,
@@ -52,9 +53,18 @@ export default function (server: Server, ctx: AppContext) {
         isModerator ||
         (auth.credentials.type === 'access' &&
           isAccessFull(auth.credentials.scope))
+      const hasPersonalDetailsAccess =
+        auth.credentials.type === 'oauth' &&
+        (await canManageFirstPartyPersonalDetails(
+          ctx,
+          auth.credentials.clientId,
+        ))
 
       const preferences = await ctx.actorStore.read(did, (store) => {
-        return store.pref.getPreferences('app.bsky', { hasAccessFull })
+        return store.pref.getPreferences('app.bsky', {
+          hasAccessFull,
+          hasPersonalDetailsAccess,
+        })
       })
 
       return {

@@ -145,6 +145,28 @@ export function isFirstPartyClient(
   )
 }
 
+/** Private birthdate access is limited to configured confidential clients. */
+export async function canManageFirstPartyPersonalDetails(
+  ctx: Pick<AppContext, 'cfg' | 'oauthProvider'>,
+  verifiedClientId: string | undefined,
+): Promise<boolean> {
+  const config = ctx.cfg.oauth.provider
+  if (
+    !verifiedClientId ||
+    !config ||
+    !ctx.oauthProvider ||
+    !isFirstPartyClient(verifiedClientId, config)
+  ) {
+    return false
+  }
+  const client =
+    await ctx.oauthProvider.clientManager.getClient(verifiedClientId)
+  return (
+    client.id === verifiedClientId &&
+    client.metadata.token_endpoint_auth_method === 'private_key_jwt'
+  )
+}
+
 /** Fresh PDS credentials authorize the owned confidential client without browser UI. */
 export async function authorizeFirstPartySession(
   ctx: Pick<AppContext, 'cfg' | 'oauthProvider' | 'accountManager'>,

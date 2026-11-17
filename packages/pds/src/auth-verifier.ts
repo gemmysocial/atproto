@@ -568,7 +568,11 @@ export class AuthVerifier {
       const originalUrl = req.originalUrl || req.url || '/'
       const url = new URL(originalUrl, this._publicUrl)
 
-      const { scope, sub: did } = await this.oauthVerifier
+      const {
+        scope,
+        sub: did,
+        client_id: clientId,
+      } = await this.oauthVerifier
         .authenticateRequest(
           req.method || 'GET',
           url,
@@ -616,6 +620,7 @@ export class AuthVerifier {
           type: 'oauth',
           did,
           permissions,
+          clientId,
         },
       }
     }

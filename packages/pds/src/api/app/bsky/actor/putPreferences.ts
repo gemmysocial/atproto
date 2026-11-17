@@ -2,6 +2,7 @@ import { InvalidRequestError, type Server } from '@atproto/xrpc-server'
 import type { AccountPreference } from '../../../../actor-store/preference/reader.js'
 import { isAccessFull } from '../../../../auth-scope.js'
 import type { AppContext } from '../../../../context.js'
+import { canManageFirstPartyPersonalDetails } from '../../../../first-party-auth.js'
 import { app } from '../../../../lexicons/index.js'
 import {
   bareDidFromProxyTo,
@@ -51,10 +52,17 @@ export default function (server: Server, ctx: AppContext) {
       const hasAccessFull =
         auth.credentials.type === 'access' &&
         isAccessFull(auth.credentials.scope)
+      const hasPersonalDetailsAccess =
+        auth.credentials.type === 'oauth' &&
+        (await canManageFirstPartyPersonalDetails(
+          ctx,
+          auth.credentials.clientId,
+        ))
 
       await ctx.actorStore.transact(did, async (actorTxn) => {
         await actorTxn.pref.putPreferences(checkedPreferences, 'app.bsky', {
           hasAccessFull,
+          hasPersonalDetailsAccess,
         })
       })
     },
