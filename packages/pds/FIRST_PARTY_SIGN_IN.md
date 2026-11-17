@@ -60,3 +60,35 @@ docker build -f packages/pds/Dockerfile.gems-native-first-party -t gems/pds:nati
 
 Its base-file guards reject a different installed JavaScript revision before
 copying the native sign-in changes. No database schema or migration is changed.
+
+## In-app birthdate management
+
+If Gatekeeper returns a server error after issuing an email MFA challenge, the
+native bridge preserves the challenge only when that account's challenge was
+created during the request. The client must still submit a valid code and obtain
+a verified native authentication proof before a grant can be authorized.
+
+Configured confidential first-party clients can read and update the authenticated
+account's private birthdate through the existing preference RPCs. The PDS uses the
+client ID from the verified OAuth token, requires an exact configured client or
+owned CI template match, and verifies `private_key_jwt` client authentication.
+The normal RPC scope checks remain required. External OAuth clients and app
+passwords cannot read, write or remove the private birthdate preference.
+
+Deploy this support before releasing the in-app birthdate form. The guarded
+`Dockerfile.gems-personal-details` overlay preserves the current shared Gems
+image, including group hosting, WebSockets and Gatekeeper MFA. Its five module
+hashes were verified against `gems/pds:spaces-host-312fbb797f-ws`
+(`sha256:ba939fefda203b9fd5ed49e28dfd62acd6dfce3d7d28b1300662d4676d101e64`).
+It changes no schema, credentials, MFA policy or runtime configuration.
+The overlay also updates the existing group-host integrity pin to the exact new
+auth-module hash, with both the original and resulting bundle hashes checked.
+
+After compiling the PDS, build from the repository root on the existing image host:
+
+```sh
+docker build -f packages/pds/Dockerfile.gems-personal-details -t gems/pds:personal-details-<commit> .
+```
+
+The shared PDS serves staging and production. Building or deploying this overlay
+on that host requires operator approval; retain the previous image for rollback.

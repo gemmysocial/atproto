@@ -2,6 +2,7 @@ import { app } from '../../lexicons/index.js'
 
 export type PrefAllowedOptions = {
   hasAccessFull?: boolean
+  hasPersonalDetailsAccess?: boolean
 }
 
 export function prefAllowed(
@@ -9,6 +10,12 @@ export function prefAllowed(
   options?: PrefAllowedOptions,
 ): boolean {
   if (options?.hasAccessFull === true) {
+    return true
+  }
+  if (
+    prefType === app.bsky.actor.defs.personalDetailsPref.$type &&
+    options?.hasPersonalDetailsAccess === true
+  ) {
     return true
   }
 

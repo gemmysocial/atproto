@@ -25,6 +25,14 @@ beforeEach(() => jest.restoreAllMocks())
 function fixture() {
   const jwtKey = createSecretKey(Buffer.alloc(32, 1))
   const revokeRefreshToken = jest.fn(async (_id: string) => {})
+  const recentFactor = jest.fn(
+    async (): Promise<{ requestedAt: string } | undefined> => undefined,
+  )
+  const factorQuery = {
+    select: jest.fn().mockReturnThis(),
+    where: jest.fn().mockReturnThis(),
+    executeTakeFirst: recentFactor,
+  }
   const nativeFetch = jest
     .spyOn(globalThis, 'fetch')
     .mockImplementation(async () =>
@@ -86,6 +94,7 @@ function fixture() {
     oauthProvider: provider,
     accountManager: {
       login,
+      db: { db: { selectFrom: jest.fn(() => factorQuery) } },
       jwtKey,
       serviceDid: 'did:web:gems.xyz',
       revokeRefreshToken,
@@ -102,6 +111,8 @@ function fixture() {
     login,
     nativeFetch,
     revokeRefreshToken,
+    recentFactor,
+    factorQuery,
     [Symbol.dispose]() {
       nativeFetch.mockRestore()
     },
@@ -257,6 +268,52 @@ it('rejects unverifiable native authentication responses before authorizing a gr
   ).rejects.toThrow()
   expect(f.revokeRefreshToken).not.toHaveBeenCalled()
   expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+})
+
+it('keeps a freshly issued Gatekeeper code challenge when email delivery fails', async () => {
+  using f = fixture()
+  f.nativeFetch.mockImplementationOnce(async () => {
+    f.recentFactor.mockResolvedValueOnce({
+      requestedAt: new Date().toISOString().replace('Z', '000000+00:00'),
+    })
+    return Response.json({ error: 'InternalServerError' }, { status: 500 })
+  })
+  await expect(authorizeFirstPartySession(f.ctx, input, f.req)).rejects.toThrow(
+    'verification code',
+  )
+  expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+  expect(f.provider.deviceManager.createEphemeral).not.toHaveBeenCalled()
+  expect(f.factorQuery.select).toHaveBeenCalledWith('requestedAt')
+  expect(f.factorQuery.where).toHaveBeenCalledWith('did', '=', 'did:plc:alice')
+  expect(f.factorQuery.where).toHaveBeenCalledWith('purpose', '=', '2fa_code')
+  await authorizeFirstPartySession(
+    f.ctx,
+    { ...input, authFactorToken: 'ABCDE-12345' },
+    f.req,
+  )
+  expect(f.revokeRefreshToken).toHaveBeenCalledWith('temporary-native-session')
+  expect(f.provider.requestManager.setAuthorized).toHaveBeenCalledTimes(1)
+})
+
+it('does not turn stale codes or failed code verification into a fresh challenge', async () => {
+  for (const withCode of [false, true]) {
+    using f = fixture()
+    f.recentFactor.mockResolvedValue({
+      requestedAt: new Date(Date.now() - 60_000).toISOString(),
+    })
+    f.nativeFetch.mockResolvedValueOnce(
+      Response.json({ error: 'InternalServerError' }, { status: 500 }),
+    )
+    await expect(
+      authorizeFirstPartySession(
+        f.ctx,
+        { ...input, ...(withCode ? { authFactorToken: 'WRONG-12345' } : {}) },
+        f.req,
+      ),
+    ).rejects.toThrow('Native authentication is unavailable')
+    expect(f.provider.requestManager.setAuthorized).not.toHaveBeenCalled()
+    if (withCode) expect(f.recentFactor).not.toHaveBeenCalled()
+  }
 })
 
 it('fails closed when the configured native authenticator is missing or unavailable', async () => {

@@ -1,0 +1,16 @@
+ARG GEMS_PDS_BASE=gems/pds:spaces-host-312fbb797f-ws
+FROM ${GEMS_PDS_BASE}
+
+# Preserve the running Gems image and reject unexpected auth/preference modules.
+RUN node -e 'const fs=require("node:fs"),crypto=require("node:crypto");const expected={"auth-verifier.js":"3b80a90dc0b567330cd94dac61670cd07c2ccd7c6f9474c5c733b44aa1e6b309","first-party-auth.js":"7cff6f3c99062257335df451640627aa03f83fe160904665b7059fb6ada2eba7","actor-store/preference/util.js":"f53e3fed63f8c5f7e72d61c9dbeb0768463fd34e0c6024a6ef4884bd3ce275b5","api/app/bsky/actor/getPreferences.js":"2205caf4d1697edef1f8855beca7ecdc934e91e9b84b4b06e4fa11c8b2ee6a19","api/app/bsky/actor/putPreferences.js":"0e32970e1b7d96bfd135a1fe6016b6adafec4fded525f717c9e92cf8ecf03feb"};for(const [name,digest] of Object.entries(expected)){const file="/app/packages/pds/dist/"+name;if(crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex")!==digest)throw new Error("Unexpected Gems PDS base file: "+file)}'
+
+COPY packages/pds/dist/auth-verifier.js packages/pds/dist/auth-verifier.js.map /app/packages/pds/dist/
+COPY packages/pds/dist/first-party-auth.js packages/pds/dist/first-party-auth.js.map /app/packages/pds/dist/
+COPY packages/pds/dist/actor-store/preference/util.js packages/pds/dist/actor-store/preference/util.js.map /app/packages/pds/dist/actor-store/preference/
+COPY packages/pds/dist/api/app/bsky/actor/getPreferences.js packages/pds/dist/api/app/bsky/actor/getPreferences.js.map /app/packages/pds/dist/api/app/bsky/actor/
+COPY packages/pds/dist/api/app/bsky/actor/putPreferences.js packages/pds/dist/api/app/bsky/actor/putPreferences.js.map /app/packages/pds/dist/api/app/bsky/actor/
+
+# Keep the group host's integrity check aligned with this verified auth module.
+RUN node -e 'const fs=require("node:fs"),crypto=require("node:crypto"),file="/app/services/pds/gems/index.mjs",source=fs.readFileSync(file,"utf8"),hash=value=>crypto.createHash("sha256").update(value).digest("hex"),before="3b80a90dc0b567330cd94dac61670cd07c2ccd7c6f9474c5c733b44aa1e6b309",after="90f4e0aa48e0cc0591b7c9211a058f8f57a7585b752ba728d5d752c28ae0462b";if(hash(source)!=="5c4c06140ace869701b78dcd159b43d9e7c1cb45a9d7893a91ba4862d1a8eabe"||source.split(before).length!==2)throw new Error("Unexpected Gems group-host integrity pin");const updated=source.replace(before,after);if(hash(updated)!=="9387ec5269a9d7413ca727021c81ccef23521f553954818eba56dda6136638af")throw new Error("Gems group-host pin update mismatch");fs.writeFileSync(file,updated)'
+
+LABEL xyz.gems.change="first-party-personal-details"
